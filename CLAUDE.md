@@ -22,6 +22,6 @@ The owner uses it from their phone. Keep replies short and say plainly what chan
   every set at target on 3 logged days running → target +1 rep / +5 s, `lvl`+1, `log[day].up[id]` = old target (undo reverts); `x.auto === false`
   turns it off; `log[day].t[id]` = target when logged. Streak freezes (`sim`): 1 per 7 full days in a streak, max 2, a missed day uses one
   (shown ❄ on the calendar). Daily challenge `log[day].ch` (seeded by the date, `ensureChallenge`). Badges (`badges()`): series of thresholds;
-  `S.seen` = announced ids, `S.lvlSeen` = announced level. Pop-ups queue (`celebrate`). Progress sheet: tap the level bar.
+  `S.seen` = announced ids, `S.lvlSeen` = announced level. Record day = most exercises done in a day (`dayRecord`, `isRecordDay`, +20 XP; badge series `dayex` / lifetime `allex`). Pop-ups queue (`celebrate`). Progress sheet: tap the level bar.
 - Timed exercises: timer with 5 s get-ready (auto), each side, sets; wake lock, beeps, vibration.
 - Check a change: serve with `python3 -m http.server`, drive it in headless Chromium at ~380 px wide, check the console for errors.

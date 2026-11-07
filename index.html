@@ -62,7 +62,7 @@ h2 { font-size:14px; color:var(--dim); font-weight:600; margin:26px 0 10px; text
 .cal .fut { background:none; }
 .cal .hd { background:none; aspect-ratio:auto; font-size:11px; }
 .stats { display:flex; gap:10px; margin-top:12px; }
-.stats div { flex:1; background:var(--card); border-radius:10px; padding:8px; text-align:center; font-size:12px; color:var(--dim); }
+.stats div { flex:1; background:var(--card); border-radius:10px; padding:8px 4px; text-align:center; font-size:11px; color:var(--dim); }
 .stats b { display:block; font-size:18px; color:var(--text); }
 .foot { display:flex; justify-content:center; margin-top:22px; }
 .lvl { display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 12px; margin-bottom:10px; width:100%; text-align:left; }
@@ -291,6 +291,9 @@ const dayMin = () => S.dayMin || 4;
 const doneCount = L => Object.entries(L.d || {}).filter(([id, n]) => n >= ((S.ex.find(x => x.id === id) || {}).sets || 1)).length;
 const fullOf = L => { const need = Math.min(dayMin(), L.n || S.ex.length); return need > 0 && doneCount(L) >= need; };
 const sweepOf = L => !!L && L.n > 0 && doneCount(L) >= L.n; // every exercise done
+// Record: most exercises done in one day (days before k, or all days)
+const dayRecord = before => Object.entries(S.log).reduce((m, [k, L]) => (!before || k < before) ? Math.max(m, doneCount(L)) : m, 0);
+const isRecordDay = k => { const n = doneCount(S.log[k] || {}), prev = dayRecord(k); return prev > 0 && n > prev; };
 function recountDays() { for (const L of Object.values(S.log)) L.full = fullOf(L); } // after the rule changes
 function refreshFull(k) {
   const L = dayLog(k);
@@ -352,7 +355,7 @@ function chalDone(k) {
   return ch.kind === 'set' ? es.length >= ch.v : es.some(e => eVal(e) >= ch.v);
 }
 // XP for one day (derived from what was logged)
-const XP = { set: 5, target: 5, best: 20, full: 25, sweep: 15, chal: 30, levelUp: 40, week: 50, badge: 50 };
+const XP = { set: 5, target: 5, best: 20, full: 25, sweep: 15, dayRec: 20, chal: 30, levelUp: 40, week: 50, badge: 50 };
 function dayXp(k) {
   const L = S.log[k]; if (!L) return 0;
   let xp = 0;
@@ -368,6 +371,7 @@ function dayXp(k) {
   }
   if (L.full) xp += XP.full;
   if (sweepOf(L)) xp += XP.sweep;
+  if (isRecordDay(k)) xp += XP.dayRec;
   if (chalDone(k)) xp += XP.chal;
   xp += XP.levelUp * Object.keys(L.up || {}).length;
   return xp;
@@ -392,10 +396,11 @@ function sim() {
 const weekStart = d => { const x = new Date(d); x.setHours(12, 0, 0, 0); return addDays(x, -((x.getDay() + 6) % 7)); };
 const goal = () => S.goal || 5;
 function weekStats(ws) {
-  const w = { full: 0, sets: 0, reps: 0, secs: 0, bests: 0, xp: 0 };
+  const w = { full: 0, ex: 0, sets: 0, reps: 0, secs: 0, bests: 0, xp: 0 };
   for (let i = 0; i < 7; i++) {
     const k = dayKey(addDays(ws, i)), L = S.log[k]; if (!L) continue;
     if (L.full) w.full++;
+    w.ex += doneCount(L);
     w.xp += dayXp(k);
     for (const [id, es] of Object.entries(L.v || {})) {
       const x = exById(id) || {};
@@ -417,6 +422,8 @@ function badges() {
   const series = (key, icon, cur, needs, name) => needs.forEach(n => out.push({ id: `${key}-${n}`, icon, cur, need: n, name: name(n), key }));
   const fullDays = Object.values(S.log).filter(L => L.full).length;
   series('days', '📅', fullDays, [1, 7, 30, 100, 365], n => n === 1 ? 'First full day' : `${n} full days`);
+  series('dayex', '🔢', dayRecord(), [5, 8, 10, 12, 16], n => `${n} exercises in a day`);
+  series('allex', '🧮', Object.values(S.log).reduce((a, L) => a + doneCount(L), 0), [25, 100, 250, 500, 1000, 2500, 5000], n => `${n.toLocaleString()} exercises done`);
   series('streak', '🔥', G.best, [3, 7, 14, 30, 100], n => `${n}-day streak`);
   let recs = 0, chals = 0;
   for (const k of Object.keys(S.log)) { Object.values(S.log[k].v || {}).forEach(es => es.forEach(e => { if (e.rec) recs++; })); if (chalDone(k)) chals++; }
@@ -475,8 +482,9 @@ function render() {
       ${x.kind === 'time' && !d ? `<button class="go" data-act="time">▶</button>` : ''}
       <button class="chk${n && !d ? ' part' : ''}" data-act="add" aria-label="Log a set">${chk}</button></div>`;
   }).join('');
-  const need = Math.min(dayMin(), tot);
-  $('allDone').textContent = !tot ? '' : done === tot ? 'Clean sweep – all done for today 💪' : done >= need ? `Day counted ✓ · ${tot - done} more for a clean sweep (+${XP.sweep} XP)` : `${need - done} more to count the day`;
+  const need = Math.min(dayMin(), tot), rec = dayRecord(k);
+  const recTxt = !rec ? '' : done > rec ? ' · new record! 🏅' : done === rec ? ` · ties your record (${rec})` : ` · record ${rec}`;
+  $('allDone').textContent = !tot ? '' : (done === tot ? 'Clean sweep – all done for today 💪' : done >= need ? `Day counted ✓ · ${done} done` : `${need - done} more to count the day`) + (done ? recTxt : '');
   renderCal(G, bs);
 }
 function renderCal(G, bs) {
@@ -492,13 +500,13 @@ function renderCal(G, bs) {
   }
   $('cal').innerHTML = h;
   const wk = weekStats(weekStart(t)).full;
-  $('stats').innerHTML = `<div><b>${wk}/${goal()}</b>this week${wk >= goal() ? ' 🎯' : ''}</div><div><b>${G.best}</b>best streak</div><div><b>${bs.filter(b => b.cur >= b.need).length}</b>badges</div>`;
+  $('stats').innerHTML = `<div><b>${wk}/${goal()}</b>this week${wk >= goal() ? ' 🎯' : ''}</div><div><b>${G.best}</b>best streak</div><div><b>${dayRecord()}</b>most in a day</div><div><b>${bs.filter(b => b.cur >= b.need).length}</b>badges</div>`;
 }
 
 // ---- logging sets ----
 function commit(k) {
   const bs0 = badges(), xp0 = totalXp(bs0), lv0 = levelOf(xp0).lv, chal0 = chalDone(k);
-  const L = dayLog(k), was = L.full, sweep0 = sweepOf(L);
+  const L = dayLog(k), was = L.full, sweep0 = sweepOf(L), cnt0 = doneCount(L), rec0 = dayRecord(k);
   L.t = L.t || {};
   for (const id of Object.keys(L.v || {})) {
     if (L.v[id].length) { L.d[id] = L.v[id].length; const x = exById(id); if (x && L.t[id] == null) L.t[id] = x.target; }
@@ -516,6 +524,8 @@ function commit(k) {
   if (xp > xp0) floatXp(xp - xp0);
   if (chalDone(k) && !chal0) celebrate('Challenge done! ⭐', `+${XP.chal} XP`);
   if (now && !was) { const st = sim().streak; celebrate('Day counted! 🎉', st > 1 ? `${st}-day streak` : 'Day 1 – see you tomorrow'); }
+  const cnt = doneCount(L);
+  if (cnt > cnt0 && rec0 > 0 && cnt > rec0) celebrate(`New record: ${cnt} exercises in a day! 🏅`, cnt0 <= rec0 ? `Old record ${rec0} · +${XP.dayRec} XP` : 'Still going!');
   if (sweepOf(L) && !sweep0) celebrate('Clean sweep! 🧹', `All ${L.n} exercises · +${XP.sweep} XP`);
   ups.forEach(x => celebrate(`${x.name}: level ${x.lvl}! ⬆`, `New target ${tgtText(x)}`));
   fresh.forEach(b => celebrate(`${b.icon} ${b.name}`, `Badge earned · +${XP.badge} XP`));
@@ -734,7 +744,7 @@ function openProgress() {
     ov.innerHTML = `<div class="sheet"><h3><span>Level ${P.lv}</span><button class="ghost" data-a="close">Close</button></h3>
       <div class="lvl" style="cursor:default"><span class="bar"><i style="width:${100 * P.into / P.need}%"></i></span><small>${P.into}/${P.need} XP · ${xp} total</small></div>
       <div class="small">XP: set ${XP.set} · at target +${XP.target} · over target +1 per rep / 5 s (max 10) · new best +${XP.best} · full day +${XP.full} ·
-        clean sweep +${XP.sweep} · challenge +${XP.chal} · exercise level-up +${XP.levelUp} · weekly goal +${XP.week} · badge +${XP.badge}</div>
+        clean sweep +${XP.sweep} · record day (most exercises) +${XP.dayRec} · challenge +${XP.chal} · exercise level-up +${XP.levelUp} · weekly goal +${XP.week} · badge +${XP.badge}</div>
       <h4>A day counts with</h4>
       <div class="step" style="justify-content:flex-start;margin:0"><button data-m="-1">−</button><div><b style="font-size:20px">${dayMin()}</b> of ${S.ex.length} exercises<br><span class="small">all of them = clean sweep, +${XP.sweep} XP</span></div><button data-m="1">+</button></div>
       <h4>Weekly goal</h4>
@@ -742,7 +752,7 @@ function openProgress() {
       <h4>This week vs last</h4>
       <table class="wk"><tr><th></th><th>Last week</th><th>This week</th></tr>
         ${row('Full days', lw.full, tw.full)}
-        ${row('Sets', lw.sets, tw.sets)}${row('Reps', lw.reps, tw.reps)}${row('Hold time', lw.secs, tw.secs, v => fmtT(v))}
+        ${row('Exercises done', lw.ex, tw.ex)}${row('Sets', lw.sets, tw.sets)}${row('Reps', lw.reps, tw.reps)}${row('Hold time', lw.secs, tw.secs, v => fmtT(v))}
         ${row('New bests', lw.bests, tw.bests)}${row('XP', lw.xp, tw.xp)}</table>
       <h4>Streak freezes</h4>
       <div class="small">❄ ${G.freezes} of 2 banked. You earn one for every 7 full days in a streak; a missed day uses one instead of breaking your streak.</div>
