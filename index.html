@@ -60,6 +60,30 @@ h2 { font-size:14px; color:var(--dim); font-weight:600; margin:26px 0 10px; text
 .stats div { flex:1; background:var(--card); border-radius:10px; padding:8px; text-align:center; font-size:12px; color:var(--dim); }
 .stats b { display:block; font-size:18px; color:var(--text); }
 .foot { display:flex; justify-content:center; margin-top:22px; }
+.lvl { display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 12px; margin-bottom:10px; width:100%; text-align:left; }
+.lvl b { color:var(--warn); white-space:nowrap; }
+.bar { flex:1; height:8px; background:var(--card2); border-radius:4px; overflow:hidden; }
+.bar i { display:block; height:100%; background:var(--warn); border-radius:4px; transition:width .5s; }
+.lvl small { color:var(--dim); white-space:nowrap; font-size:12px; }
+.chal { display:flex; gap:10px; align-items:center; background:#2a2416; border:1px solid #5a4a24; border-radius:12px; padding:10px 12px; margin-bottom:10px; font-size:14px; }
+.chal.ok { background:#18261e; border-color:var(--acc2); }
+.chal .t { flex:1; }
+.chal .xp { color:var(--warn); font-weight:600; white-space:nowrap; }
+.pill { font-size:11px; font-weight:600; color:var(--warn); border:1px solid #5a4a24; border-radius:999px; padding:1px 7px; margin-left:6px; vertical-align:2px; }
+.streak small { display:block; color:#8fc9ff; }
+.cal .frz { background:#1d3346; color:#8fc9ff; }
+.float { position:fixed; left:50%; top:40%; transform:translateX(-50%); color:var(--warn); font-weight:800; font-size:26px; z-index:30; pointer-events:none; animation:up 1.2s ease-out forwards; }
+@keyframes up { from { opacity:1; transform:translate(-50%,0); } to { opacity:0; transform:translate(-50%,-70px); } }
+.badges { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:8px; }
+.badge { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:8px 6px; text-align:center; font-size:12px; }
+.badge .i { font-size:26px; display:block; }
+.badge.off { opacity:.55; }
+.badge .bar { margin-top:5px; height:5px; }
+table.wk { width:100%; border-collapse:collapse; font-size:14px; }
+table.wk td, table.wk th { padding:5px 4px; border-bottom:1px solid var(--line); text-align:right; }
+table.wk td:first-child, table.wk th:first-child { text-align:left; color:var(--dim); font-weight:400; }
+.sheet h4 { margin:18px 0 8px; font-size:13px; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; }
+.small { font-size:12px; color:var(--dim); }
 /* sheets */
 .ov { position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:flex-end; justify-content:center; z-index:10; }
 .sheet { background:var(--bg); border-top:1px solid var(--line); border-radius:18px 18px 0 0; width:100%; max-width:560px; max-height:92vh; overflow:auto; padding:16px 16px calc(20px + env(safe-area-inset-bottom)); }
@@ -96,6 +120,8 @@ h2 { font-size:14px; color:var(--dim); font-weight:600; margin:26px 0 10px; text
   <h1>Limber<span class="date" id="date"></span></h1>
   <div class="streak" id="streak"></div>
 </header>
+<button class="lvl" id="lvl"></button>
+<div id="chal"></div>
 <div class="list" id="list"></div>
 <div class="all-done" id="allDone"></div>
 <h2>Last 5 weeks</h2>
@@ -121,6 +147,10 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 // S = { ex: [{id, name, kind:'reps'|'time', target (reps or seconds), sets, sides, note}],
 //       log: { 'YYYY-MM-DD': { d: {exId: setsDone}, v: {exId: [entry per set]}, n: exercises on the list that day, full: bool } } }
 // entry = {n} (reps or seconds) or {l, r} for each-side exercises. Days logged before entries existed have only d.
+// Game (2026-11-07): day log also has t: {exId: target when logged}, up: {exId: target before a level-up made that day},
+// ch: the day's challenge {id, kind: 'plus'|'set', v}. Exercises carry lvl (1+) and auto (false = never raise the target).
+// S.goal = weekly goal (full days), S.seen = badge ids already announced, S.lvlSeen = player level already announced.
+// XP, levels, streak freezes and badges are all DERIVED from the log, never stored.
 let S;
 function load() {
   try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
@@ -159,20 +189,153 @@ function refreshFull(k) {
   const L = dayLog(k);
   L.n = S.ex.length;
   L.full = S.ex.length > 0 && S.ex.every(x => isDone(k, x));
-  if (!Object.keys(L.d).length) delete S.log[k];
+  if (!Object.keys(L.d).length && !L.ch) delete S.log[k];
   return L.full;
 }
-function streak() {
-  let n = 0, d = new Date();
-  if (!(S.log[dayKey(d)] || {}).full) d = addDays(d, -1); // today not finished yet doesn't break it
-  while ((S.log[dayKey(d)] || {}).full) { n++; d = addDays(d, -1); }
+// ---- game ----
+const stepOf = x => x.kind === 'time' ? 5 : 1;
+const exById = id => S.ex.find(x => x.id === id);
+const tgtOn = (k, x) => (S.log[k] && S.log[k].t && S.log[k].t[x.id] != null) ? S.log[k].t[x.id] : x.target;
+const metOn = (k, x, tgt) => { const es = entries(k, x.id); return es.length >= x.sets && es.filter(e => eVal(e) >= tgt).length >= x.sets; };
+const loggedDays = id => Object.keys(S.log).filter(k => entries(k, id).length).sort(); // days with numbers for this exercise
+function streakRun(x) { // most recent logged days in a row that met today's target (at that target), capped at 3
+  let n = 0;
+  for (const k of loggedDays(x.id).reverse()) { if (tgtOn(k, x) === x.target && metOn(k, x, x.target)) { if (++n >= 3) break; } else break; }
   return n;
 }
-function best() {
-  const ks = Object.keys(S.log).filter(k => S.log[k].full).sort();
-  let b = 0, run = 0, prev = null;
-  for (const k of ks) { run = prev && dayKey(addDays(new Date(prev + 'T12:00'), 1)) === k ? run + 1 : 1; b = Math.max(b, run); prev = k; }
-  return b;
+// Rising targets: meet the target (every set) on 3 logged days running -> target goes up one step, level +1.
+// Undoing today's sets takes the level-up back.
+function checkLevelUp(k) {
+  const L = dayLog(k), ups = [];
+  L.up = L.up || {};
+  for (const x of S.ex) {
+    if (L.up[x.id] != null) {
+      const old = L.up[x.id];
+      const prior = loggedDays(x.id).filter(d => d < k).slice(-2);
+      if (!(metOn(k, x, old) && prior.length === 2 && prior.every(d => tgtOn(d, x) === old && metOn(d, x, old)))) {
+        x.target = old; x.lvl = Math.max(1, (x.lvl || 1) - 1); delete L.up[x.id];
+      }
+      continue;
+    }
+    if (x.auto === false || !entries(k, x.id).length || tgtOn(k, x) !== x.target) continue;
+    const days = loggedDays(x.id).filter(d => d <= k).slice(-3);
+    if (days.length === 3 && days[2] === k && days.every(d => tgtOn(d, x) === x.target && metOn(d, x, x.target))) {
+      L.up[x.id] = x.target; x.target += stepOf(x); x.lvl = (x.lvl || 1) + 1; ups.push(x);
+    }
+  }
+  if (!Object.keys(L.up).length) delete L.up;
+  return ups;
+}
+// Daily challenge, picked once per day from the date
+function rng(seed) { let h = 2166136261; for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) ^ Math.imul(h ^ (h >>> 13), 3266489909)) >>> 0) / 4294967296; }
+function ensureChallenge(k) {
+  if ((S.log[k] && S.log[k].ch) || !S.ex.length) return;
+  const r = rng(k), x = S.ex[Math.floor(r() * S.ex.length)];
+  const ch = r() < 0.7 ? { id: x.id, kind: 'plus', v: x.target + (x.kind === 'time' ? 10 : 3) } : { id: x.id, kind: 'set', v: x.sets + 1 };
+  dayLog(k).ch = ch; save();
+}
+function chalText(ch) {
+  const x = exById(ch.id); if (!x) return '';
+  if (ch.kind === 'set') return `Do ${ch.v} sets of ${x.name} (one extra)`;
+  return `One set of ${x.name}: ${x.kind === 'time' ? fmtT(ch.v) : ch.v + ' reps'}${x.sides ? ' each side' : ''}`;
+}
+function chalDone(k) {
+  const L = S.log[k], ch = L && L.ch; if (!ch || !exById(ch.id)) return false;
+  const es = entries(k, ch.id);
+  return ch.kind === 'set' ? es.length >= ch.v : es.some(e => eVal(e) >= ch.v);
+}
+// XP for one day (derived from what was logged)
+const XP = { set: 5, target: 5, best: 20, full: 25, chal: 30, levelUp: 40, week: 50, badge: 50 };
+function dayXp(k) {
+  const L = S.log[k]; if (!L) return 0;
+  let xp = 0;
+  if (!L.v) xp += XP.set * Object.values(L.d).reduce((a, b) => a + b, 0);
+  else for (const [id, es] of Object.entries(L.v)) {
+    const x = exById(id) || { kind: 'reps', target: 0 }, tgt = L.t && L.t[id] != null ? L.t[id] : x.target;
+    for (const e of es) {
+      xp += XP.set;
+      const v = eVal(e);
+      if (tgt && v >= tgt) xp += XP.target + Math.min(10, Math.floor((v - tgt) / stepOf(x)));
+      if (e.rec) xp += XP.best;
+    }
+  }
+  if (L.full) xp += XP.full;
+  if (chalDone(k)) xp += XP.chal;
+  xp += XP.levelUp * Object.keys(L.up || {}).length;
+  return xp;
+}
+// Streak with freezes: every 7 full days in a streak earns a freeze (max 2); a missed day uses one instead of breaking the streak.
+function sim() {
+  const ks = Object.keys(S.log).filter(k => S.log[k].full).sort(), t = today();
+  const G = { streak: 0, best: 0, freezes: 0, frozen: new Set() };
+  if (!ks.length) return G;
+  let run = 0, cnt = 0, fz = 0;
+  for (let d = new Date(ks[0] + 'T12:00'); dayKey(d) <= t; d = addDays(d, 1)) {
+    const k = dayKey(d), full = (S.log[k] || {}).full;
+    if (full) { run++; if (++cnt >= 7) { cnt = 0; fz = Math.min(2, fz + 1); } }
+    else if (k === t) {} // today isn't over yet
+    else if (run > 0 && fz > 0) { fz--; G.frozen.add(k); }
+    else { run = 0; cnt = 0; }
+    G.best = Math.max(G.best, run);
+  }
+  G.streak = run; G.freezes = fz;
+  return G;
+}
+const weekStart = d => { const x = new Date(d); x.setHours(12, 0, 0, 0); return addDays(x, -((x.getDay() + 6) % 7)); };
+const goal = () => S.goal || 5;
+function weekStats(ws) {
+  const w = { full: 0, sets: 0, reps: 0, secs: 0, bests: 0, xp: 0 };
+  for (let i = 0; i < 7; i++) {
+    const k = dayKey(addDays(ws, i)), L = S.log[k]; if (!L) continue;
+    if (L.full) w.full++;
+    w.xp += dayXp(k);
+    for (const [id, es] of Object.entries(L.v || {})) {
+      const x = exById(id) || {};
+      for (const e of es) { w.sets++; if (e.rec) w.bests++; const tot = e.n != null ? e.n : e.l + e.r; if (x.kind === 'time') w.secs += tot; else w.reps += tot; }
+    }
+    if (!L.v) w.sets += Object.values(L.d).reduce((a, b) => a + b, 0);
+  }
+  return w;
+}
+function weeksMet() { // weeks (Mon-Sun) that reached the goal
+  const ks = Object.keys(S.log).filter(k => S.log[k].full);
+  const by = {}; ks.forEach(k => { const w = dayKey(weekStart(new Date(k + 'T12:00'))); by[w] = (by[w] || 0) + 1; });
+  return Object.values(by).filter(n => n >= goal()).length;
+}
+// Badges: series of thresholds; earned = cur >= need
+const fmtDur = s => s >= 3600 ? `${+(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`;
+function badges() {
+  const G = sim(), out = [];
+  const series = (key, icon, cur, needs, name) => needs.forEach(n => out.push({ id: `${key}-${n}`, icon, cur, need: n, name: name(n), key }));
+  const fullDays = Object.values(S.log).filter(L => L.full).length;
+  series('days', '📅', fullDays, [1, 7, 30, 100, 365], n => n === 1 ? 'First full day' : `${n} full days`);
+  series('streak', '🔥', G.best, [3, 7, 14, 30, 100], n => `${n}-day streak`);
+  let recs = 0, chals = 0;
+  for (const k of Object.keys(S.log)) { Object.values(S.log[k].v || {}).forEach(es => es.forEach(e => { if (e.rec) recs++; })); if (chalDone(k)) chals++; }
+  series('best', '🏆', recs, [1, 10, 50, 100], n => n === 1 ? 'First new best' : `${n} new bests`);
+  series('chal', '⭐', chals, [1, 10, 50], n => n === 1 ? 'First challenge' : `${n} challenges`);
+  series('week', '🎯', weeksMet(), [1, 4, 12, 52], n => n === 1 ? 'Weekly goal hit' : `${n} weekly goals`);
+  for (const x of S.ex) {
+    let tot = 0;
+    for (const [k, L] of Object.entries(S.log)) {
+      const es = (L.v && L.v[x.id]);
+      if (es) es.forEach(e => { tot += e.n != null ? e.n : e.l + e.r; });
+      else if (L.d && L.d[x.id]) tot += L.d[x.id] * tgtOn(k, x) * (x.sides ? 2 : 1); // plain ticks: count the target
+    }
+    if (x.kind === 'time') series(`tot-${x.id}`, '⏱', tot, [600, 1800, 3600, 10800, 36000], n => `${fmtDur(n)} of ${x.name}`);
+    else series(`tot-${x.id}`, '💪', tot, [100, 500, 1000, 5000, 10000], n => `${n.toLocaleString()} ${x.name}`);
+    series(`lv-${x.id}`, '⬆', x.lvl || 1, [3, 5, 10], n => `${x.name} level ${n}`);
+  }
+  return out;
+}
+function totalXp(bs) {
+  let xp = Object.keys(S.log).reduce((a, k) => a + dayXp(k), 0);
+  return xp + XP.week * weeksMet() + XP.badge * (bs || badges()).filter(b => b.cur >= b.need).length;
+}
+function levelOf(xp) { // level n -> n+1 costs 100 + 50(n-1)
+  let lv = 1, need = 100;
+  while (xp >= need) { xp -= need; lv++; need += 50; }
+  return { lv, into: xp, need };
 }
 
 // ---- render ----
@@ -184,47 +347,73 @@ function render() {
   const C = 2 * Math.PI * 22, f = tot ? done / tot : 0;
   $('ring').innerHTML = `<svg width="54" height="54"><circle cx="27" cy="27" r="22" fill="none" stroke="var(--line)" stroke-width="6"/>
     <circle cx="27" cy="27" r="22" fill="none" stroke="var(--acc)" stroke-width="6" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - f)}" style="transition:stroke-dashoffset .4s"/></svg><span>${done}/${tot}</span>`;
-  const st = streak();
-  $('streak').innerHTML = `<b>${st ? '🔥' + st : '–'}</b>${st === 1 ? 'day' : 'days'}`;
+  ensureChallenge(k);
+  const G = sim(), st = G.streak, bs = badges(), P = levelOf(totalXp(bs));
+  $('streak').innerHTML = `<b>${st ? '🔥' + st : '–'}</b>${st === 1 ? 'day' : 'days'}${G.freezes ? `<small>❄ ${G.freezes}</small>` : ''}`;
+  $('lvl').innerHTML = `<b>Lv ${P.lv}</b><span class="bar"><i style="width:${100 * P.into / P.need}%"></i></span><small>${P.into}/${P.need} XP ›</small>`;
+  const ch = S.log[k] && S.log[k].ch, cd = chalDone(k);
+  $('chal').innerHTML = ch && exById(ch.id) ? `<div class="chal${cd ? ' ok' : ''}"><span>${cd ? '✅' : '⭐'}</span><span class="t">${cd ? 'Challenge done: ' : 'Today\'s challenge: '}${esc(chalText(ch))}</span><span class="xp">+${XP.chal} XP</span></div>` : '';
   $('list').innerHTML = S.ex.map(x => {
     const n = setsDone(k, x.id), d = n >= x.sets, es = entries(k, x.id);
     const chk = d ? '✓' : n ? `${n}/${x.sets}` : '+';
     const prev = lastDay(x.id), best = bestBefore(x.id);
-    const hist = [prev && 'last ' + prev.map(e => eText(x, e)).join(', '), best && 'best ' + eText(x, { n: best })].filter(Boolean).join(' · ');
+    const run = x.auto === false ? 0 : streakRun(x), up = S.log[k] && S.log[k].up && S.log[k].up[x.id] != null;
+    const hist = [prev && 'last ' + prev.map(e => eText(x, e)).join(', '), best && 'best ' + eText(x, { n: best }),
+      up ? '⬆ levelled up today' : run >= 2 && !entries(k, x.id).length ? '⬆ hit the target today to level up' : run ? `⬆ ${run}/3 days at target` : ''].filter(Boolean).join(' · ');
     return `<div class="ex${d ? ' done' : ''}" data-id="${x.id}">
-      <div class="info"><div class="name">${esc(x.name)}</div><div class="tgt">${tgtText(x)}</div>${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}
+      <div class="info"><div class="name">${esc(x.name)}<span class="pill">Lv ${x.lvl || 1}</span></div><div class="tgt">${tgtText(x)}</div>${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}
         ${es.length ? `<div class="chips">${es.map((e, i) => `<button class="chip${e.rec ? ' rec' : ''}" data-act="edit" data-i="${i}">${e.rec ? '🏆 ' : ''}${eText(x, e)}</button>`).join('')}</div>` : ''}
         ${hist ? `<div class="hist">${hist}</div>` : ''}</div>
       ${x.kind === 'time' && !d ? `<button class="go" data-act="time">▶</button>` : ''}
       <button class="chk${n && !d ? ' part' : ''}" data-act="add" aria-label="Log a set">${chk}</button></div>`;
   }).join('');
   $('allDone').textContent = tot && done === tot ? 'All done for today 💪' : '';
-  renderCal();
+  renderCal(G, bs);
 }
-function renderCal() {
+function renderCal(G, bs) {
   const t = new Date(); t.setHours(12, 0, 0, 0);
   const dow = (t.getDay() + 6) % 7; // Monday first
   const start = addDays(t, -dow - 28);
   let h = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(c => `<div class="hd">${c}</div>`).join('');
   for (let i = 0; i < 35; i++) {
     const d = addDays(start, i), k = dayKey(d), L = S.log[k];
-    let c = d > t ? 'fut' : L && L.full ? 'full' : L && Object.keys(L.d).length ? 'part' : '';
+    let c = d > t ? 'fut' : L && L.full ? 'full' : G.frozen.has(k) ? 'frz' : L && Object.keys(L.d).length ? 'part' : '';
     if (k === today()) c += ' today';
-    h += `<div class="${c}">${d.getDate()}</div>`;
+    h += `<div class="${c}">${G.frozen.has(k) ? '❄' : d.getDate()}</div>`;
   }
   $('cal').innerHTML = h;
-  const fullDays = Object.values(S.log).filter(L => L.full).length;
-  let last30 = 0; for (let i = 0; i < 30; i++) if ((S.log[dayKey(addDays(t, -i))] || {}).full) last30++;
-  $('stats').innerHTML = `<div><b>${fullDays}</b>days done</div><div><b>${last30}/30</b>last 30 days</div><div><b>${best()}</b>best streak</div>`;
+  const wk = weekStats(weekStart(t)).full;
+  $('stats').innerHTML = `<div><b>${wk}/${goal()}</b>this week${wk >= goal() ? ' 🎯' : ''}</div><div><b>${G.best}</b>best streak</div><div><b>${bs.filter(b => b.cur >= b.need).length}</b>badges</div>`;
 }
 
 // ---- logging sets ----
 function commit(k) {
+  const bs0 = badges(), xp0 = totalXp(bs0), lv0 = levelOf(xp0).lv, chal0 = chalDone(k);
   const L = dayLog(k), was = L.full;
-  for (const id of Object.keys(L.v || {})) { if (L.v[id].length) L.d[id] = L.v[id].length; else { delete L.v[id]; delete L.d[id]; } }
+  L.t = L.t || {};
+  for (const id of Object.keys(L.v || {})) {
+    if (L.v[id].length) { L.d[id] = L.v[id].length; const x = exById(id); if (x && L.t[id] == null) L.t[id] = x.target; }
+    else { delete L.v[id]; delete L.d[id]; delete L.t[id]; }
+  }
+  if (!Object.keys(L.t).length) delete L.t;
+  const ups = checkLevelUp(k);
   const now = refreshFull(k);
+  const bs = badges(), xp = totalXp(bs), lv = levelOf(xp).lv;
+  if (!S.seen) S.seen = bs0.filter(b => b.cur >= b.need).map(b => b.id); // first run: don't announce old badges
+  const fresh = bs.filter(b => b.cur >= b.need && !S.seen.includes(b.id));
+  fresh.forEach(b => S.seen.push(b.id));
+  const lvNew = lv > (S.lvlSeen || lv0); S.lvlSeen = Math.max(S.lvlSeen || 0, lv);
   save(); render();
-  if (now && !was) celebrate();
+  if (xp > xp0) floatXp(xp - xp0);
+  if (chalDone(k) && !chal0) celebrate('Challenge done! ⭐', `+${XP.chal} XP`);
+  if (now && !was) { const st = sim().streak; celebrate('All done! 🎉', st > 1 ? `${st}-day streak` : 'Day 1 – see you tomorrow'); }
+  ups.forEach(x => celebrate(`${x.name}: level ${x.lvl}! ⬆`, `New target ${tgtText(x)}`));
+  fresh.forEach(b => celebrate(`${b.icon} ${b.name}`, `Badge earned · +${XP.badge} XP`));
+  if (lvNew) celebrate(`Level ${lv}! 🎖`, 'Keep it up');
+}
+function floatXp(n) {
+  const el = document.createElement('div'); el.className = 'float'; el.textContent = `+${n} XP`;
+  document.body.appendChild(el); setTimeout(() => el.remove(), 1300);
 }
 function setEntry(x, i, e) { // i = index to replace, or -1 to add; e = null deletes
   const k = today(), L = dayLog(k);
@@ -236,16 +425,24 @@ function setEntry(x, i, e) { // i = index to replace, or -1 to add; e = null del
     e.rec = prevBest > 0 && eVal(e) > prevBest ? 1 : undefined;
     if (e.rec) arr.forEach((o, j) => { if (j !== i) delete o.rec; });
     if (i < 0) arr.push(e); else arr[i] = e;
-    if (e.rec) toast(`New best for ${x.name}! 🏆`);
+    if (e.rec) toast(`New best for ${x.name}! 🏆 +${XP.best} XP`);
   } else arr.splice(i, 1);
   commit(k);
 }
-function celebrate() {
+// Pop-ups queue up so several (day done, level-up, badge) show one after another
+const celQ = [];
+function celebrate(title, sub) {
+  celQ.push([title, sub]);
+  if (celQ.length === 1) showCel();
+}
+function showCel() {
+  if (!celQ.length) return;
+  const [title, sub] = celQ[0];
   buzz([60, 60, 120]); chime([660, 880, 1320]);
-  const st = streak();
   const el = document.createElement('div'); el.className = 'cel';
-  el.innerHTML = `<div>All done! 🎉<small>${st > 1 ? `${st}-day streak` : 'Day 1 – see you tomorrow'}</small></div>`;
-  document.body.appendChild(el); setTimeout(() => el.remove(), 2200);
+  el.innerHTML = `<div>${esc(title)}<small>${esc(sub)}</small></div>`;
+  document.body.appendChild(el);
+  setTimeout(() => { el.remove(); celQ.shift(); showCel(); }, 2200);
 }
 function toast(msg) {
   document.querySelectorAll('.toast').forEach(t => t.remove());
@@ -391,6 +588,46 @@ document.addEventListener('visibilitychange', () => { // re-take the wake lock a
   if (document.visibilityState === 'visible') render(); // new day while the app was in the background
 });
 
+// ---- progress sheet: level, weekly goal + review, freezes, badges ----
+$('lvl').onclick = openProgress;
+function openProgress() {
+  const ov = document.createElement('div'); ov.className = 'ov';
+  const paint = () => {
+    const G = sim(), bs = badges(), xp = totalXp(bs), P = levelOf(xp);
+    const tw = weekStats(weekStart(new Date())), lw = weekStats(addDays(weekStart(new Date()), -7));
+    const row = (lab, a, b, f = v => v) => `<tr><td>${lab}</td><td>${f(a)}</td><td>${f(b)}${b > a ? ' ▲' : ''}</td></tr>`;
+    const got = bs.filter(b => b.cur >= b.need);
+    const next = Object.values(bs.filter(b => b.cur < b.need).reduce((m, b) => { if (!m[b.key]) m[b.key] = b; return m; }, {}))
+      .sort((a, b) => b.cur / b.need - a.cur / a.need);
+    ov.innerHTML = `<div class="sheet"><h3><span>Level ${P.lv}</span><button class="ghost" data-a="close">Close</button></h3>
+      <div class="lvl" style="cursor:default"><span class="bar"><i style="width:${100 * P.into / P.need}%"></i></span><small>${P.into}/${P.need} XP · ${xp} total</small></div>
+      <div class="small">XP: set ${XP.set} · at target +${XP.target} · over target +1 per rep / 5 s (max 10) · new best +${XP.best} · full day +${XP.full} ·
+        challenge +${XP.chal} · exercise level-up +${XP.levelUp} · weekly goal +${XP.week} · badge +${XP.badge}</div>
+      <h4>Weekly goal</h4>
+      <div class="step" style="justify-content:flex-start;margin:0"><button data-g="-1">−</button><div><b style="font-size:20px">${goal()}</b> full days a week<br><span class="small">this week ${tw.full}/${goal()}${tw.full >= goal() ? ' 🎯 done' : ''}</span></div><button data-g="1">+</button></div>
+      <h4>This week vs last</h4>
+      <table class="wk"><tr><th></th><th>Last week</th><th>This week</th></tr>
+        ${row('Full days', lw.full, tw.full)}
+        ${row('Sets', lw.sets, tw.sets)}${row('Reps', lw.reps, tw.reps)}${row('Hold time', lw.secs, tw.secs, v => fmtT(v))}
+        ${row('New bests', lw.bests, tw.bests)}${row('XP', lw.xp, tw.xp)}</table>
+      <h4>Streak freezes</h4>
+      <div class="small">❄ ${G.freezes} of 2 banked. You earn one for every 7 full days in a streak; a missed day uses one instead of breaking your streak.</div>
+      <h4>Badges · ${got.length}</h4>
+      <div class="badges">${got.map(b => `<div class="badge"><span class="i">${b.icon}</span>${esc(b.name)}</div>`).join('') || '<div class="small">None yet – finish a full day for the first.</div>'}</div>
+      <h4>Next up</h4>
+      <div class="badges">${next.slice(0, 9).map(b => `<div class="badge off"><span class="i">${b.icon}</span>${esc(b.name)}<span class="bar"><i style="width:${Math.min(100, 100 * b.cur / b.need)}%"></i></span></div>`).join('')}</div>
+    </div>`;
+  };
+  ov.addEventListener('click', e => {
+    if (e.target === ov) return ov.remove();
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.a === 'close') return ov.remove();
+    if (b.dataset.g) { S.goal = Math.max(1, Math.min(7, goal() + +b.dataset.g)); save(); render(); paint(); }
+  });
+  paint();
+  document.body.appendChild(ov);
+}
+
 // ---- edit ----
 $('editBtn').onclick = openEdit;
 function openEdit() {
@@ -407,6 +644,7 @@ function openEdit() {
         </div>
         <div class="row"><label>Sets<input type="number" inputmode="numeric" min="1" max="10" data-f="sets" value="${x.sets}"></label>
           <label style="flex:3">Note<input type="text" data-f="note" value="${esc(x.note || '')}" placeholder="optional"></label></div>
+        <label class="cb"><input type="checkbox" data-f="auto"${x.auto === false ? '' : ' checked'}>Raise the target after 3 days at target (+${x.kind === 'time' ? '5 s' : '1 rep'})</label>
         <div class="ctl"><button data-a="up"${i ? '' : ' disabled'}>↑</button><button data-a="down"${i < draft.length - 1 ? '' : ' disabled'}>↓</button><button data-a="del">Remove</button></div>
       </div>`).join('')}
       <button data-a="add" style="width:100%">+ Add exercise</button></div>`;
@@ -426,10 +664,10 @@ function openEdit() {
     if (a === 'cancel') return ov.remove();
     if (a === 'save') {
       S.ex = draft.filter(x => x.name).map(x => ({ ...x, sets: Math.min(10, x.sets) }));
-      const k = today(); if (S.log[k]) refreshFull(k); // today's tally follows the new list; past days keep theirs
+      const k = today(); if (S.log[k]) { if (S.log[k].ch && !exById(S.log[k].ch.id)) delete S.log[k].ch; refreshFull(k); } // today's tally follows the new list; past days keep theirs
       save(); render(); return ov.remove();
     }
-    if (a === 'add') draft.push({ id: uid(), name: '', kind: 'reps', target: 10, sets: 1, sides: false, note: '' });
+    if (a === 'add') draft.push({ id: uid(), name: '', kind: 'reps', target: 10, sets: 1, sides: false, note: '', auto: true, lvl: 1 });
     if (a === 'del') draft.splice(i, 1);
     if (a === 'up') [draft[i - 1], draft[i]] = [draft[i], draft[i - 1]];
     if (a === 'down') [draft[i + 1], draft[i]] = [draft[i], draft[i + 1]];
