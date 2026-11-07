@@ -7,7 +7,11 @@ The owner uses it from their phone. Keep replies short and say plainly what chan
 - `sw.js` – offline cache: page network-first (4 s timeout), the rest cache-first. **Bump `CACHE` (`limber-vN`) on every deploy.**
   It deletes only `limber-*` caches: the origin tomrecht.github.io is shared with Woodshed (`woodshed-*` caches), whose worker does the same.
 - Data: `localStorage` key `limber.v1` (shared origin, so it carried over from the old /woodshed/limber/ address).
-  `ex` = exercises `{id, name, kind: 'reps'|'time', target, sets, sides, note}`; `log[day] = {d: {exId: sets done}, n, full}`.
+  `ex` = exercises `{id, name, kind: 'reps'|'time', target, sets, sides, note}`;
+  `log[day] = {d: {exId: sets done}, v: {exId: [entry per set]}, n, full}`, entry = `{n}` (reps or seconds) or `{l, r}` for each-side, `rec: 1` = beat
+  every earlier day (each-side counts by the weaker side). Days logged before 2026-11-07 have `d` only (plain ticks); keep them working.
+- Logging: tapping an exercise opens a number entry for one set (prefilled from that set last time); chips edit/delete; extra sets allowed.
+  The timer records seconds actually held ("Done" mid-hold counts the time so far; one side only → entry sheet for the other).
   Only today's `full` is recomputed, so editing the list never rewrites past days. Never lose the owner's data: migrate, don't reset.
 - Timed exercises: timer with 5 s get-ready, each side, sets; wake lock, beeps, vibration.
 - Check a change: serve with `python3 -m http.server`, drive it in headless Chromium at ~380 px wide, check the console for errors.
