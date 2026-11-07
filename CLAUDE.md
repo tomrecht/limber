@@ -15,6 +15,8 @@ The owner uses it from their phone. Keep replies short and say plainly what chan
   passing the best) until "Next side/set →" or "Done" (Done mid-hold counts the time so far; one side only → entry sheet for the other).
   A day is `full` (streaks, goals, calendar) once `S.dayMin` exercises are done (default 4 since 2026-11-08; set in the progress sheet;
   all of them = "clean sweep", +15 XP). Changing `dayMin` re-counts every day (`recountDays`); editing the exercise list only re-counts today. Never lose the owner's data: migrate, don't reset.
+- Exercises: the owner's six (`DEFAULTS`) + ten more (`EXTRA`, added by migration `S.rev` 2). Each has `how` (how-to text, one step a line,
+  "Tip:" lines shown as tips; defaults in `HOW` by lower-case name), shown by tapping the exercise name (`howSheet`), editable in ✎ Edit.
 - Game (2026-11-07), all DERIVED from the log except per-exercise `lvl`/`target`: XP per day (`dayXp`, values in `XP`) + weekly goals
   met (`S.goal`, default 5 full days Mon–Sun) + badges; player level `levelOf` (n→n+1 costs 100+50(n−1)). Rising targets (`checkLevelUp`):
   every set at target on 3 logged days running → target +1 rep / +5 s, `lvl`+1, `log[day].up[id]` = old target (undo reverts); `x.auto === false`

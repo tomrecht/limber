@@ -36,6 +36,11 @@ header .date { color:var(--dim); font-size:13px; font-weight:400; display:block;
 .ex.done .chk { background:var(--acc); border-color:var(--acc); color:#0d1a12; }
 .chk.part { border-color:var(--acc); font-size:13px; font-weight:700; }
 .go { padding:8px 12px; }
+.ex .info { cursor:pointer; }
+.ii { color:var(--dim); font-size:13px; margin-left:6px; font-weight:400; }
+.how ol { margin:0 0 10px; padding-left:22px; display:grid; gap:8px; }
+.how .tip { background:var(--card); border-left:3px solid var(--warn); border-radius:8px; padding:8px 10px; font-size:14px; color:var(--dim); }
+.ed textarea { font:inherit; font-size:14px; color:var(--text); background:var(--card2); border:1px solid var(--line); border-radius:8px; padding:7px 9px; width:100%; min-height:90px; resize:vertical; }
 .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
 .chip { padding:3px 10px; border-radius:999px; font-size:14px; background:var(--acc2); border:1px solid var(--acc2); color:var(--text); }
 .chip.rec { border-color:var(--warn); }
@@ -140,6 +145,95 @@ const DEFAULTS = [
   { name: 'Ankle rises', kind: 'reps', target: 20, sets: 1, sides: false, note: '' },
   { name: 'Hip flexibility', kind: 'time', target: 45, sets: 1, sides: true, note: 'e.g. kneeling hip-flexor stretch' },
 ];
+// Added 2026-11-08 (rev 2), after the owner's first six
+const EXTRA = [
+  { name: 'Squats', kind: 'reps', target: 15, sets: 1, sides: false, note: 'chest up, knees over toes' },
+  { name: 'Glute bridge', kind: 'reps', target: 15, sets: 1, sides: false, note: 'squeeze at the top' },
+  { name: 'Split squats', kind: 'reps', target: 10, sets: 1, sides: true, note: 'back knee towards the floor' },
+  { name: 'Superman', kind: 'time', target: 20, sets: 1, sides: false, note: 'look at the floor' },
+  { name: 'Bird dog', kind: 'reps', target: 8, sets: 1, sides: true, note: 'keep hips level' },
+  { name: 'Wall angels', kind: 'reps', target: 10, sets: 1, sides: false, note: 'back and arms on the wall' },
+  { name: 'Dead bug', kind: 'reps', target: 8, sets: 1, sides: true, note: 'lower back stays down' },
+  { name: 'Hamstring stretch', kind: 'time', target: 30, sets: 1, sides: true, note: 'straight back, hinge at the hips' },
+  { name: 'Open book', kind: 'reps', target: 8, sets: 1, sides: true, note: 'knees stay together' },
+  { name: 'Single-leg stand', kind: 'time', target: 30, sets: 1, sides: true, note: 'eyes closed once easy' },
+];
+// How-to text per exercise (by lower-case name). One step per line; a line starting "Tip:" is shown as a tip.
+const HOW = {
+  'plank': `Forearms on the floor, elbows under your shoulders.
+Step your feet back so your body is a straight line from head to heels.
+Squeeze your glutes and brace your stomach as if about to be poked.
+Breathe steadily and hold.
+Tip: Don't let your hips sag or pike up. On your knees is the easier version.`,
+  'side plank': `Lie on your side, elbow under your shoulder, legs straight and stacked.
+Lift your hips so your body is a straight line from head to feet.
+Keep your hips pushed forward, not sagging back.
+Hold, then switch sides.
+Tip: Bend your bottom knee to make it easier.`,
+  'shoulder strength': `Band external rotation: hold a band in both hands, elbows bent 90° and tucked against your sides.
+Rotate your forearms outwards, stretching the band, keeping your elbows at your sides.
+Return slowly.
+Tip: No band? Lie on your side and do the same with a light weight or water bottle in the top hand.`,
+  'push-ups': `Hands a bit wider than your shoulders, body straight from head to heels.
+Lower your chest towards the floor, elbows angled back about 45°, not flared out.
+Push back up to straight arms.
+Tip: Too hard? Do them with knees on the floor or hands on a table or wall.`,
+  'ankle rises': `Stand tall, feet hip-width apart, holding a wall or chair for balance.
+Rise up onto the balls of your feet as high as you can.
+Pause at the top, then lower slowly.
+Tip: Harder: on one leg, or with heels hanging off a step.`,
+  'hip flexibility': `Kneeling hip-flexor stretch: kneel on your right knee, left foot flat in front.
+Tuck your pelvis under and squeeze your right glute.
+Shift your weight gently forward until you feel a stretch at the front of your right hip.
+Hold, breathing slowly, then switch sides.
+Tip: Raise the right arm overhead for a stronger stretch. Don't arch your lower back.`,
+  'squats': `Feet shoulder-width apart, toes turned out slightly.
+Sit back and down as if onto a chair, keeping your chest up and weight in your heels.
+Go as low as is comfortable (thighs level with the floor is the aim).
+Push through your heels to stand up.
+Tip: Knees go in the direction of your toes, not inwards. Use a chair behind you to start.`,
+  'glute bridge': `Lie on your back, knees bent, feet flat and hip-width apart near your bottom.
+Squeeze your glutes and lift your hips until your body is straight from shoulders to knees.
+Pause at the top, then lower slowly.
+Tip: Push through your heels. Harder: one leg at a time.`,
+  'split squats': `Stand in a long stride, one foot forward, back heel up.
+Lower straight down, bending both knees until the back knee nearly touches the floor.
+Push through the front foot to come up. Do all reps, then switch legs.
+Tip: Keep your torso upright and front knee over the ankle. Hold a wall for balance at first.`,
+  'superman': `Lie face down, arms stretched out in front.
+Lift your arms, chest and legs a few centimetres off the floor at the same time.
+Keep looking at the floor so your neck stays long.
+Hold, breathing steadily.
+Tip: Easier: lift only arms and chest, or opposite arm and leg.`,
+  'bird dog': `On hands and knees: hands under shoulders, knees under hips, back flat.
+Reach one arm straight forward and the opposite leg straight back, level with your body.
+Hold 2 seconds, keeping your hips level, then come back slowly.
+Switch to the other arm and leg; that's one rep each side.
+Tip: Imagine a glass of water on your lower back. Slow beats far.`,
+  'wall angels': `Stand with your back against a wall, feet a little away from it.
+Bottom, upper back and head touch the wall.
+Arms in a 'goal post' shape (elbows at shoulder height, bent 90°), backs of arms against the wall.
+Slide your arms up overhead and back down, keeping them touching the wall.
+Tip: Only go as high as you can keep contact. Good for a rounded upper back from playing.`,
+  'dead bug': `Lie on your back, arms pointing at the ceiling, knees bent 90° above your hips.
+Press your lower back into the floor and keep it there the whole time.
+Slowly lower one arm overhead and the opposite leg towards the floor.
+Come back, then the other arm and leg.
+Tip: If your back lifts, don't lower as far. Breathe out as you lower.`,
+  'hamstring stretch': `Stand and put one heel on a low step or chair, leg straight, toes up.
+Keep your back straight and hinge forward from the hips until you feel a stretch at the back of the thigh.
+Hold, breathing slowly, then switch legs.
+Tip: Don't round your back to reach further. Lying on your back with a towel round your foot works too.`,
+  'open book': `Lie on your side, knees bent up to hip height, arms straight out in front, palms together.
+Keeping your knees together on the floor, lift the top arm up and over, following your hand with your eyes.
+Let it reach towards the floor behind you so your chest opens like a book.
+Breathe out, hold 2–3 seconds, then close slowly. Do all reps, then the other side.
+Tip: It's your upper back that turns, not your hips.`,
+  'single-leg stand': `Stand on one leg, the other foot just off the floor.
+Stand tall, eyes on a fixed point, with a wall or chair nearby.
+Hold, then switch legs.
+Tip: Harder: close your eyes, stand on a cushion, or turn your head slowly.`,
+};
 const uid = () => Math.random().toString(36).slice(2, 9);
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -157,6 +251,12 @@ function load() {
   if (!S || !Array.isArray(S.ex)) S = { ex: DEFAULTS.map(x => ({ id: uid(), ...x })), log: {} };
   S.log = S.log || {};
   if (S.dayMin == null) { S.dayMin = 4; recountDays(); } // 2026-11-08: a day counts with 4 exercises done, not all of them
+  if ((S.rev || 0) < 2) { // rev 2: add the ten extra exercises, and how-to text for everything that has none
+    const have = new Set(S.ex.map(x => x.name.toLowerCase()));
+    EXTRA.forEach(x => { if (!have.has(x.name.toLowerCase())) S.ex.push({ id: uid(), ...x, auto: true, lvl: 1 }); });
+    S.ex.forEach(x => { if (!x.how && HOW[x.name.toLowerCase()]) x.how = HOW[x.name.toLowerCase()]; });
+    S.rev = 2;
+  }
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 
@@ -369,7 +469,7 @@ function render() {
     const hist = [prev && 'last ' + prev.map(e => eText(x, e)).join(', '), best && 'best ' + eText(x, { n: best }),
       up ? '⬆ levelled up today' : run >= 2 && !entries(k, x.id).length ? '⬆ hit the target today to level up' : run ? `⬆ ${run}/3 days at target` : ''].filter(Boolean).join(' · ');
     return `<div class="ex${d ? ' done' : ''}" data-id="${x.id}">
-      <div class="info"><div class="name">${esc(x.name)}<span class="pill">Lv ${x.lvl || 1}</span></div><div class="tgt">${tgtText(x)}</div>${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}
+      <div class="info"><div class="name">${esc(x.name)}<span class="pill">Lv ${x.lvl || 1}</span><span class="ii">ⓘ</span></div><div class="tgt">${tgtText(x)}</div>${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}
         ${es.length ? `<div class="chips">${es.map((e, i) => `<button class="chip${e.rec ? ' rec' : ''}" data-act="edit" data-i="${i}">${e.rec ? '🏆 ' : ''}${eText(x, e)}</button>`).join('')}</div>` : ''}
         ${hist ? `<div class="hist">${hist}</div>` : ''}</div>
       ${x.kind === 'time' && !d ? `<button class="go" data-act="time">▶</button>` : ''}
@@ -460,12 +560,34 @@ function toast(msg) {
   document.body.appendChild(t); setTimeout(() => t.remove(), 2600);
 }
 $('list').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
+  const b = e.target.closest('button');
+  if (!b) { const inf = e.target.closest('.info'); if (inf) howSheet(S.ex.find(q => q.id === inf.closest('.ex').dataset.id)); return; }
   const id = b.closest('.ex').dataset.id, x = S.ex.find(q => q.id === id);
   if (b.dataset.act === 'time') return startTimer(x);
   if (b.dataset.act === 'edit') return entrySheet(x, +b.dataset.i);
   entrySheet(x, -1);
 });
+
+// How-to sheet: tap an exercise's name
+function howSheet(x) {
+  if (!x) return;
+  const lines = (x.how || '').split('\n').map(l => l.trim()).filter(Boolean);
+  const steps = lines.filter(l => !/^tip:/i.test(l)), tips = lines.filter(l => /^tip:/i.test(l)).map(l => l.replace(/^tip:\s*/i, ''));
+  const ov = document.createElement('div'); ov.className = 'ov';
+  ov.innerHTML = `<div class="sheet how"><h3><span>${esc(x.name)}</span><button class="ghost" data-a="close">Close</button></h3>
+    <div class="hist" style="margin:0 0 12px">${tgtText(x)}${x.note ? ' · ' + esc(x.note) : ''}</div>
+    ${steps.length ? `<ol>${steps.map(l => `<li>${esc(l)}</li>`).join('')}</ol>` : '<div class="small">No description yet – add one in ✎ Edit exercises.</div>'}
+    ${tips.map(t => `<div class="tip">💡 ${esc(t)}</div>`).join('')}
+    <div class="sbtns">${x.kind === 'time' ? '<button data-a="time">▶ Timer</button>' : ''}<button class="pri" data-a="log">Log a set</button></div></div>`;
+  ov.addEventListener('click', e => {
+    if (e.target === ov) return ov.remove();
+    const b = e.target.closest('button'); if (!b) return;
+    ov.remove();
+    if (b.dataset.a === 'time') startTimer(x);
+    if (b.dataset.a === 'log') entrySheet(x, -1);
+  });
+  document.body.appendChild(ov);
+}
 
 // Entry sheet: how many reps / seconds for one set (each side separately if it has sides).
 // Prefilled from the same set last time, else the target.
@@ -657,6 +779,7 @@ function openEdit() {
         </div>
         <div class="row"><label>Sets<input type="number" inputmode="numeric" min="1" max="10" data-f="sets" value="${x.sets}"></label>
           <label style="flex:3">Note<input type="text" data-f="note" value="${esc(x.note || '')}" placeholder="optional"></label></div>
+        <label>How to (one step per line; start a line with "Tip:" for a tip)<textarea data-f="how">${esc(x.how || '')}</textarea></label>
         <label class="cb"><input type="checkbox" data-f="auto"${x.auto === false ? '' : ' checked'}>Raise the target after 3 days at target (+${x.kind === 'time' ? '5 s' : '1 rep'})</label>
         <div class="ctl"><button data-a="up"${i ? '' : ' disabled'}>↑</button><button data-a="down"${i < draft.length - 1 ? '' : ' disabled'}>↓</button><button data-a="del">Remove</button></div>
       </div>`).join('')}
