@@ -11,7 +11,8 @@ The owner uses it from their phone. Keep replies short and say plainly what chan
   `log[day] = {d: {exId: sets done}, v: {exId: [entry per set]}, n, full}`, entry = `{n}` (reps or seconds) or `{l, r}` for each-side, `rec: 1` = beat
   every earlier day (each-side counts by the weaker side). Days logged before 2026-11-07 have `d` only (plain ticks); keep them working.
 - Logging: tapping an exercise opens a number entry for one set (prefilled from that set last time); chips edit/delete; extra sets allowed.
-  The timer records seconds actually held ("Done" mid-hold counts the time so far; one side only → entry sheet for the other).
+  The timer records seconds actually held. A hold never ends by itself: at the target it chimes and counts overtime (+N, chime again on
+  passing the best) until "Next side/set →" or "Done" (Done mid-hold counts the time so far; one side only → entry sheet for the other).
   Only today's `full` is recomputed, so editing the list never rewrites past days. Never lose the owner's data: migrate, don't reset.
-- Timed exercises: timer with 5 s get-ready, each side, sets; wake lock, beeps, vibration.
+- Timed exercises: timer with 5 s get-ready (auto), each side, sets; wake lock, beeps, vibration.
 - Check a change: serve with `python3 -m http.server`, drive it in headless Chromium at ~380 px wide, check the console for errors.

@@ -82,6 +82,7 @@ h2 { font-size:14px; color:var(--dim); font-weight:600; margin:26px 0 10px; text
 .timer .btns { display:flex; gap:12px; }
 .timer.prep .big { color:var(--dim); }
 .timer.run .big { color:var(--acc); }
+.timer.over .big { color:var(--warn); }
 .toast { position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:var(--card2); border:1px solid var(--line); padding:10px 16px; border-radius:12px; z-index:30; display:flex; gap:12px; align-items:center; }
 .cel { position:fixed; inset:0; display:grid; place-items:center; z-index:25; pointer-events:none; }
 .cel div { background:var(--card); border:2px solid var(--acc); border-radius:18px; padding:22px 30px; text-align:center; font-size:20px; font-weight:700; animation:pop .4s ease-out; }
@@ -308,7 +309,8 @@ function chime(freqs, dur = 0.18) {
 }
 const buzz = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
 
-// ---- timer: 5 s get-ready, then the hold; with sides, left then (5 s switch) right; repeats for sets ----
+// ---- timer: 5 s get-ready, then the hold; with sides, left then (5 s switch) right; repeats for sets.
+// A hold never ends by itself: at the target it chimes and keeps counting (+overtime) until Next / Done.
 let T = null;
 function startTimer(x) {
   chime([]); // unlock audio on the tap
@@ -320,46 +322,63 @@ function startTimer(x) {
   el.innerHTML = `<div class="tn">${esc(x.name)}</div><div class="side"></div><div class="big"></div><div class="ph"></div>
     <div class="btns"><button id="tStop">Stop</button><button class="pri" id="tDone">Done ✓</button></div>`;
   document.body.appendChild(el);
-  T = { x, steps, i: -1, el, end: 0, iv: 0, lastBeep: null, wl: null, held: [] }; // held[set] = {n} or {l, r}
+  T = { x, steps, i: -1, el, start: 0, end: 0, iv: 0, lastBeep: null, wl: null, held: [], best: bestBefore(x.id) }; // held[set] = {n} or {l, r}
   try { navigator.wakeLock && navigator.wakeLock.request('screen').then(w => { if (T) T.wl = w; }).catch(() => {}); } catch (e) {}
   el.querySelector('#tStop').onclick = () => stopTimer(false);
-  el.querySelector('#tDone').onclick = () => stopTimer(true);
+  el.querySelector('#tDone').onclick = () => {
+    if (T.steps[T.i].ph === 'run') { hold(elapsed()); if (T.i < T.steps.length - 1) return nextStep(); }
+    stopTimer(true);
+  };
   nextStep();
   T.iv = setInterval(timerTick, 100);
 }
+const elapsed = () => Math.max(0, Math.round((Date.now() - T.start) / 1000));
 function nextStep() {
   T.i++;
-  if (T.i >= T.steps.length) return stopTimer(true, true);
+  if (T.i >= T.steps.length) return stopTimer(true);
   const s = T.steps[T.i];
-  T.end = Date.now() + s.len * 1000; T.lastBeep = null;
+  T.start = Date.now(); T.end = T.start + s.len * 1000; T.lastBeep = null; T.over = false; T.beatBest = false;
   T.el.className = 'timer ' + s.ph;
   T.el.querySelector('.side').textContent = s.side;
   const sets = T.x.sets > 1 ? ` · set ${s.set + 1} of ${T.x.sets}` : '';
   T.el.querySelector('.ph').textContent = (s.ph === 'prep' ? (T.i ? 'Switch / rest' : 'Get ready') : 'Hold') + sets;
+  // the main button moves on to the next hold, or finishes on the last one
+  const last = T.i >= T.steps.length - 1 || (s.ph === 'prep' && T.i === T.steps.length - 2);
+  T.el.querySelector('#tDone').textContent = s.ph === 'run' && !last ? (T.x.sides && s.side.startsWith('L') ? 'Next side →' : 'Next set →') : 'Done ✓';
   if (s.ph === 'run') { chime([880], 0.25); buzz(150); }
   timerTick();
 }
 function timerTick() {
   if (!T) return;
-  const left = Math.max(0, Math.ceil((T.end - Date.now()) / 1000));
-  T.el.querySelector('.big').textContent = T.steps[T.i].ph === 'run' ? fmtT(left).replace(' s', '') : left;
-  if (left <= 3 && left > 0 && T.lastBeep !== left) { T.lastBeep = left; chime([520], 0.08); }
-  if (Date.now() >= T.end) {
-    if (T.steps[T.i].ph === 'run') { chime([1046, 1318], 0.2); buzz([100, 80, 100]); hold(T.steps[T.i].len); }
-    nextStep();
+  const s = T.steps[T.i], now = Date.now();
+  if (s.ph === 'prep') {
+    const left = Math.max(0, Math.ceil((T.end - now) / 1000));
+    T.el.querySelector('.big').textContent = left;
+    if (left <= 3 && left > 0 && T.lastBeep !== left) { T.lastBeep = left; chime([520], 0.08); }
+    if (now >= T.end) nextStep();
+    return;
   }
+  if (now < T.end) {
+    const left = Math.ceil((T.end - now) / 1000);
+    T.el.querySelector('.big').textContent = fmtT(left).replace(' s', '');
+    if (left <= 3 && T.lastBeep !== left) { T.lastBeep = left; chime([520], 0.08); }
+    return;
+  }
+  const el = elapsed();
+  if (!T.over) { T.over = true; chime([1046, 1318], 0.2); buzz([100, 80, 100]); T.el.className = 'timer run over'; }
+  if (!T.beatBest && T.best && el > T.best) { T.beatBest = true; chime([784, 1046, 1318, 1568], 0.12); buzz(200); }
+  T.el.querySelector('.big').textContent = '+' + fmtT(el - s.len).replace(' s', '');
+  T.el.querySelector('.ph').textContent = `Target ✓ · ${fmtT(el)} held${T.beatBest ? ' · new best! 🏆' : ' · keep going?'}`;
 }
-function hold(sec) { // record a finished (or cut-short) hold for the current step
+function hold(sec) { // record a hold for the current step
   const s = T.steps[T.i], h = T.held[s.set] = T.held[s.set] || {};
   if (!T.x.sides) h.n = sec; else h[s.side.startsWith('L') ? 'l' : 'r'] = sec;
 }
-function stopTimer(done, auto) {
+function stopTimer(done) {
   if (!T) return;
   clearInterval(T.iv); try { T.wl && T.wl.release(); } catch (e) {}
-  // "Done" mid-hold counts the time held so far; "Stop" keeps only finished holds
-  if (done && !auto && T.i < T.steps.length && T.steps[T.i].ph === 'run') {
-    const s = T.steps[T.i]; hold(Math.max(0, Math.round((Date.now() - (T.end - s.len * 1000)) / 1000)));
-  }
+  // "Stop" mid-hold keeps the time held so far too, if the target was reached
+  if (!done && T.steps[T.i] && T.steps[T.i].ph === 'run' && T.over) hold(elapsed());
   const x = T.x, held = T.held.filter(h => h && (x.sides ? h.l != null && h.r != null : h.n != null));
   const part = T.held.find(h => h && x.sides && (h.l != null) !== (h.r != null));
   T.el.remove(); T = null;
