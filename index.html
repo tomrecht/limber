@@ -156,6 +156,7 @@ const EXTRA = [
   { name: 'Dead bug', kind: 'reps', target: 8, sets: 1, sides: true, note: 'lower back stays down' },
   { name: 'Hamstring stretch', kind: 'time', target: 30, sets: 1, sides: true, note: 'straight back, hinge at the hips' },
   { name: 'Open book', kind: 'reps', target: 8, sets: 1, sides: true, note: 'knees stay together' },
+  { name: 'Yoga', kind: 'min', target: 10, sets: 1, sides: false, note: '10+ min counts as 2 exercises, 15+ min as 3', counts: [[10, 2], [15, 3]], auto: false, rev: 3 },
   { name: 'Single-leg stand', kind: 'time', target: 30, sets: 1, sides: true, note: 'eyes closed once easy' },
 ];
 // How-to text per exercise (by lower-case name). One step per line; a line starting "Tip:" is shown as a tip.
@@ -229,6 +230,10 @@ Keeping your knees together on the floor, lift the top arm up and over, followin
 Let it reach towards the floor behind you so your chest opens like a book.
 Breathe out, hold 2–3 seconds, then close slowly. Do all reps, then the other side.
 Tip: It's your upper back that turns, not your hips.`,
+  'yoga': `Any yoga session counts: a class, an app or video, or your own flow.
+Log the minutes you did (or use ▶ to time it; it records whole minutes).
+Under 10 minutes counts as 1 exercise for the day, 10 minutes or more as 2, 15 or more as 3.
+Tip: A short routine: cat-cow, downward dog, low lunge each side, child's pose, then lie still for a minute.`,
   'single-leg stand': `Stand on one leg, the other foot just off the floor.
 Stand tall, eyes on a fixed point, with a wall or chair nearby.
 Hold, then switch legs.
@@ -238,7 +243,7 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// S = { ex: [{id, name, kind:'reps'|'time', target (reps or seconds), sets, sides, note}],
+// S = { ex: [{id, name, kind:'reps'|'time'|'min', target (reps, seconds or minutes), sets, sides, note, counts?: [[minutes, worth]...]}],
 //       log: { 'YYYY-MM-DD': { d: {exId: setsDone}, v: {exId: [entry per set]}, n: exercises on the list that day, full: bool } } }
 // entry = {n} (reps or seconds) or {l, r} for each-side exercises. Days logged before entries existed have only d.
 // Game (2026-11-07): day log also has t: {exId: target when logged}, up: {exId: target before a level-up made that day},
@@ -253,9 +258,13 @@ function load() {
   if (S.dayMin == null) { S.dayMin = 4; recountDays(); } // 2026-11-08: a day counts with 4 exercises done, not all of them
   if ((S.rev || 0) < 2) { // rev 2: add the ten extra exercises, and how-to text for everything that has none
     const have = new Set(S.ex.map(x => x.name.toLowerCase()));
-    EXTRA.forEach(x => { if (!have.has(x.name.toLowerCase())) S.ex.push({ id: uid(), ...x, auto: true, lvl: 1 }); });
+    EXTRA.filter(x => !x.rev).forEach(({ rev, ...x }) => { if (!have.has(x.name.toLowerCase())) S.ex.push({ id: uid(), ...x, auto: true, lvl: 1 }); });
     S.ex.forEach(x => { if (!x.how && HOW[x.name.toLowerCase()]) x.how = HOW[x.name.toLowerCase()]; });
     S.rev = 2;
+  }
+  if (S.rev < 3) { // rev 3: Yoga, in minutes; 10+ min counts as 2 exercises, 15+ as 3
+    if (!S.ex.some(x => x.name.toLowerCase() === 'yoga')) { const { rev, ...y } = EXTRA.find(x => x.name === 'Yoga'); S.ex.push({ id: uid(), ...y, lvl: 1, how: HOW.yoga }); }
+    S.rev = 3;
   }
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -264,8 +273,10 @@ const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '
 const today = () => dayKey(new Date());
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const fmtT = s => s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : `${s} s`;
+const timed = x => x.kind === 'time' || x.kind === 'min'; // has a timer
+const valText = (x, v) => x.kind === 'time' ? fmtT(v) : x.kind === 'min' ? `${v} min` : `${v} reps`;
 function tgtText(x) {
-  const one = x.kind === 'time' ? fmtT(x.target) : `${x.target} reps`;
+  const one = valText(x, x.target);
   return (x.sets > 1 ? `${x.sets} × ${one}` : one) + (x.sides ? ' each side' : '');
 }
 function dayLog(k) { return S.log[k] || (S.log[k] = { d: {}, n: S.ex.length, full: false }); }
@@ -274,7 +285,7 @@ const isDone = (k, x) => setsDone(k, x.id) >= x.sets;
 const entries = (k, id) => (S.log[k] && S.log[k].v && S.log[k].v[id]) || [];
 const eVal = e => e.n != null ? e.n : Math.min(e.l, e.r); // an each-side set counts by its weaker side
 const eText = (x, e) => {
-  const f = v => x.kind === 'time' ? fmtT(v).replace(' s', 's') : v;
+  const f = v => x.kind === 'time' ? fmtT(v).replace(' s', 's') : x.kind === 'min' ? `${v} min` : v;
   return e.n != null ? String(f(e.n)) : `L ${f(e.l)} · R ${f(e.r)}`;
 };
 function bestBefore(id, before) { // best single set on any day (only days before `before`, if given)
@@ -288,9 +299,18 @@ function lastDay(id) { // most recent earlier day's entries
 }
 // A day is "full" (counts for streaks, goals, calendar) once S.dayMin exercises are done (all of them if the list is shorter).
 const dayMin = () => S.dayMin || 4;
-const doneCount = L => Object.entries(L.d || {}).filter(([id, n]) => n >= ((S.ex.find(x => x.id === id) || {}).sets || 1)).length;
+const exDoneCount = L => Object.entries(L.d || {}).filter(([id, n]) => n >= ((S.ex.find(x => x.id === id) || {}).sets || 1)).length;
+// How many exercises one counts as that day: 1, or more for an exercise with `counts` (e.g. yoga: 10+ min = 2, 15+ min = 3)
+function worth(L, id) {
+  const x = S.ex.find(q => q.id === id) || {};
+  if (!x.counts || !L.v || !L.v[id]) return 1;
+  const tot = L.v[id].reduce((a, e) => a + eVal(e), 0);
+  return x.counts.reduce((w, [min, n]) => tot >= min ? Math.max(w, n) : w, 1);
+}
+// Exercises done that day, weighted (counts for the day, records and badges)
+const doneCount = L => Object.entries(L.d || {}).filter(([id, n]) => n >= ((S.ex.find(x => x.id === id) || {}).sets || 1)).reduce((a, [id]) => a + worth(L, id), 0);
 const fullOf = L => { const need = Math.min(dayMin(), L.n || S.ex.length); return need > 0 && doneCount(L) >= need; };
-const sweepOf = L => !!L && L.n > 0 && doneCount(L) >= L.n; // every exercise done
+const sweepOf = L => !!L && L.n > 0 && exDoneCount(L) >= L.n; // every exercise done
 // Record: most exercises done in one day (days before k, or all days)
 const dayRecord = before => Object.entries(S.log).reduce((m, [k, L]) => (!before || k < before) ? Math.max(m, doneCount(L)) : m, 0);
 const isRecordDay = k => { const n = doneCount(S.log[k] || {}), prev = dayRecord(k); return prev > 0 && n > prev; };
@@ -303,7 +323,7 @@ function refreshFull(k) {
   return L.full;
 }
 // ---- game ----
-const stepOf = x => x.kind === 'time' ? 5 : 1;
+const stepOf = x => x.kind === 'time' ? 5 : 1; // reps and minutes go up by 1
 const exById = id => S.ex.find(x => x.id === id);
 const tgtOn = (k, x) => (S.log[k] && S.log[k].t && S.log[k].t[x.id] != null) ? S.log[k].t[x.id] : x.target;
 const metOn = (k, x, tgt) => { const es = entries(k, x.id); return es.length >= x.sets && es.filter(e => eVal(e) >= tgt).length >= x.sets; };
@@ -341,13 +361,13 @@ function rng(seed) { let h = 2166136261; for (const c of seed) h = Math.imul(h ^
 function ensureChallenge(k) {
   if ((S.log[k] && S.log[k].ch) || !S.ex.length) return;
   const r = rng(k), x = S.ex[Math.floor(r() * S.ex.length)];
-  const ch = r() < 0.7 ? { id: x.id, kind: 'plus', v: x.target + (x.kind === 'time' ? 10 : 3) } : { id: x.id, kind: 'set', v: x.sets + 1 };
+  const ch = r() < 0.7 ? { id: x.id, kind: 'plus', v: x.target + (x.kind === 'time' ? 10 : x.kind === 'min' ? 5 : 3) } : { id: x.id, kind: 'set', v: x.sets + 1 };
   dayLog(k).ch = ch; save();
 }
 function chalText(ch) {
   const x = exById(ch.id); if (!x) return '';
   if (ch.kind === 'set') return `Do ${ch.v} sets of ${x.name} (one extra)`;
-  return `One set of ${x.name}: ${x.kind === 'time' ? fmtT(ch.v) : ch.v + ' reps'}${x.sides ? ' each side' : ''}`;
+  return `One set of ${x.name}: ${valText(x, ch.v)}${x.sides ? ' each side' : ''}`;
 }
 function chalDone(k) {
   const L = S.log[k], ch = L && L.ch; if (!ch || !exById(ch.id)) return false;
@@ -404,7 +424,7 @@ function weekStats(ws) {
     w.xp += dayXp(k);
     for (const [id, es] of Object.entries(L.v || {})) {
       const x = exById(id) || {};
-      for (const e of es) { w.sets++; if (e.rec) w.bests++; const tot = e.n != null ? e.n : e.l + e.r; if (x.kind === 'time') w.secs += tot; else w.reps += tot; }
+      for (const e of es) { w.sets++; if (e.rec) w.bests++; const tot = e.n != null ? e.n : e.l + e.r; if (x.kind === 'time') w.secs += tot; else if (x.kind === 'min') w.secs += tot * 60; else w.reps += tot; }
     }
     if (!L.v) w.sets += Object.values(L.d).reduce((a, b) => a + b, 0);
   }
@@ -438,6 +458,7 @@ function badges() {
       else if (L.d && L.d[x.id]) tot += L.d[x.id] * tgtOn(k, x) * (x.sides ? 2 : 1); // plain ticks: count the target
     }
     if (x.kind === 'time') series(`tot-${x.id}`, '⏱', tot, [600, 1800, 3600, 10800, 36000], n => `${fmtDur(n)} of ${x.name}`);
+    else if (x.kind === 'min') series(`tot-${x.id}`, '🧘', tot, [60, 300, 600, 1500, 3000], n => `${fmtDur(n * 60)} of ${x.name}`);
     else series(`tot-${x.id}`, '💪', tot, [100, 500, 1000, 5000, 10000], n => `${n.toLocaleString()} ${x.name}`);
     series(`lv-${x.id}`, '⬆', x.lvl || 1, [3, 5, 10], n => `${x.name} level ${n}`);
   }
@@ -474,17 +495,19 @@ function render() {
     const prev = lastDay(x.id), best = bestBefore(x.id);
     const run = x.auto === false ? 0 : streakRun(x), up = S.log[k] && S.log[k].up && S.log[k].up[x.id] != null;
     const hist = [prev && 'last ' + prev.map(e => eText(x, e)).join(', '), best && 'best ' + eText(x, { n: best }),
+      x.counts && es.length ? `counts as ${worth(S.log[k], x.id)} today` : '',
       up ? '⬆ levelled up today' : run >= 2 && !entries(k, x.id).length ? '⬆ hit the target today to level up' : run ? `⬆ ${run}/3 days at target` : ''].filter(Boolean).join(' · ');
     return `<div class="ex${d ? ' done' : ''}" data-id="${x.id}">
       <div class="info"><div class="name">${esc(x.name)}<span class="pill">Lv ${x.lvl || 1}</span><span class="ii">ⓘ</span></div><div class="tgt">${tgtText(x)}</div>${x.note ? `<div class="note">${esc(x.note)}</div>` : ''}
         ${es.length ? `<div class="chips">${es.map((e, i) => `<button class="chip${e.rec ? ' rec' : ''}" data-act="edit" data-i="${i}">${e.rec ? '🏆 ' : ''}${eText(x, e)}</button>`).join('')}</div>` : ''}
         ${hist ? `<div class="hist">${hist}</div>` : ''}</div>
-      ${x.kind === 'time' && !d ? `<button class="go" data-act="time">▶</button>` : ''}
+      ${timed(x) && !d ? `<button class="go" data-act="time">▶</button>` : ''}
       <button class="chk${n && !d ? ' part' : ''}" data-act="add" aria-label="Log a set">${chk}</button></div>`;
   }).join('');
-  const need = Math.min(dayMin(), tot), rec = dayRecord(k);
-  const recTxt = !rec ? '' : done > rec ? ' · new record! 🏅' : done === rec ? ` · ties your record (${rec})` : ` · record ${rec}`;
-  $('allDone').textContent = !tot ? '' : (done === tot ? 'Clean sweep – all done for today 💪' : done >= need ? `Day counted ✓ · ${done} done` : `${need - done} more to count the day`) + (done ? recTxt : '');
+  // `done` = exercises finished (ring, clean sweep); `cnt` = what they count as (yoga 10+ min = 2, ...) for the day and the record
+  const need = Math.min(dayMin(), tot), rec = dayRecord(k), cnt = doneCount(S.log[k] || {});
+  const recTxt = !rec ? '' : cnt > rec ? ' · new record! 🏅' : cnt === rec ? ` · ties your record (${rec})` : ` · record ${rec}`;
+  $('allDone').textContent = !tot ? '' : (done === tot ? 'Clean sweep – all done for today 💪' : cnt >= need ? `Day counted ✓ · ${cnt} done` : `${need - cnt} more to count the day`) + (cnt ? recTxt : '');
   renderCal(G, bs);
 }
 function renderCal(G, bs) {
@@ -588,7 +611,7 @@ function howSheet(x) {
     <div class="hist" style="margin:0 0 12px">${tgtText(x)}${x.note ? ' · ' + esc(x.note) : ''}</div>
     ${steps.length ? `<ol>${steps.map(l => `<li>${esc(l)}</li>`).join('')}</ol>` : '<div class="small">No description yet – add one in ✎ Edit exercises.</div>'}
     ${tips.map(t => `<div class="tip">💡 ${esc(t)}</div>`).join('')}
-    <div class="sbtns">${x.kind === 'time' ? '<button data-a="time">▶ Timer</button>' : ''}<button class="pri" data-a="log">Log a set</button></div></div>`;
+    <div class="sbtns">${timed(x) ? '<button data-a="time">▶ Timer</button>' : ''}<button class="pri" data-a="log">Log a set</button></div></div>`;
   ov.addEventListener('click', e => {
     if (e.target === ov) return ov.remove();
     const b = e.target.closest('button'); if (!b) return;
@@ -607,7 +630,7 @@ function entrySheet(x, i, preset) {
   const prev = lastDay(x.id);
   const guess = preset || (i >= 0 ? es[i] : (prev && prev[Math.min(setNo, prev.length) - 1]) || (es.length && es[es.length - 1]) || null);
   const g = side => guess ? (guess[side] != null ? guess[side] : eVal(guess)) : x.target;
-  const unit = x.kind === 'time' ? 'sec' : 'reps', stepBy = x.kind === 'time' ? 5 : 1;
+  const unit = x.kind === 'time' ? 'sec' : x.kind === 'min' ? 'min' : 'reps', stepBy = x.kind === 'time' ? 5 : 1;
   const sides = x.sides ? [['l', 'Left'], ['r', 'Right']] : [['n', '']];
   const ov = document.createElement('div'); ov.className = 'ov';
   ov.innerHTML = `<div class="sheet"><h3><span>${esc(x.name)} · set ${setNo}${setNo <= x.sets ? ` of ${x.sets}` : ''}</span></h3>
@@ -655,13 +678,13 @@ function startTimer(x) {
   chime([]); // unlock audio on the tap
   const steps = [];
   for (let s = 0; s < x.sets; s++) for (const side of x.sides ? ['Left side', 'Right side'] : ['']) {
-    steps.push({ ph: 'prep', len: 5, side, set: s }, { ph: 'run', len: x.target, side, set: s });
+    steps.push({ ph: 'prep', len: 5, side, set: s }, { ph: 'run', len: x.kind === 'min' ? x.target * 60 : x.target, side, set: s });
   }
   const el = document.createElement('div'); el.className = 'timer';
   el.innerHTML = `<div class="tn">${esc(x.name)}</div><div class="side"></div><div class="big"></div><div class="ph"></div>
     <div class="btns"><button id="tStop">Stop</button><button class="pri" id="tDone">Done ✓</button></div>`;
   document.body.appendChild(el);
-  T = { x, steps, i: -1, el, start: 0, end: 0, iv: 0, lastBeep: null, wl: null, held: [], best: bestBefore(x.id) }; // held[set] = {n} or {l, r}
+  T = { x, steps, i: -1, el, start: 0, end: 0, iv: 0, lastBeep: null, wl: null, held: [], best: bestBefore(x.id) * (x.kind === 'min' ? 60 : 1) }; // held[set] = {n} or {l, r}
   try { navigator.wakeLock && navigator.wakeLock.request('screen').then(w => { if (T) T.wl = w; }).catch(() => {}); } catch (e) {}
   el.querySelector('#tStop').onclick = () => stopTimer(false);
   el.querySelector('#tDone').onclick = () => {
@@ -709,7 +732,8 @@ function timerTick() {
   T.el.querySelector('.big').textContent = '+' + fmtT(el - s.len).replace(' s', '');
   T.el.querySelector('.ph').textContent = `Target ✓ · ${fmtT(el)} held${T.beatBest ? ' · new best! 🏆' : ' · keep going?'}`;
 }
-function hold(sec) { // record a hold for the current step
+function hold(sec) { // record a hold for the current step (whole minutes for a minutes exercise)
+  if (T.x.kind === 'min') sec = Math.round(sec / 60);
   const s = T.steps[T.i], h = T.held[s.set] = T.held[s.set] || {};
   if (!T.x.sides) h.n = sec; else h[s.side.startsWith('L') ? 'l' : 'r'] = sec;
 }
@@ -752,7 +776,7 @@ function openProgress() {
       <h4>This week vs last</h4>
       <table class="wk"><tr><th></th><th>Last week</th><th>This week</th></tr>
         ${row('Full days', lw.full, tw.full)}
-        ${row('Exercises done', lw.ex, tw.ex)}${row('Sets', lw.sets, tw.sets)}${row('Reps', lw.reps, tw.reps)}${row('Hold time', lw.secs, tw.secs, v => fmtT(v))}
+        ${row('Exercises done', lw.ex, tw.ex)}${row('Sets', lw.sets, tw.sets)}${row('Reps', lw.reps, tw.reps)}${row('Time (holds, yoga)', lw.secs, tw.secs, v => fmtT(v))}
         ${row('New bests', lw.bests, tw.bests)}${row('XP', lw.xp, tw.xp)}</table>
       <h4>Streak freezes</h4>
       <div class="small">❄ ${G.freezes} of 2 banked. You earn one for every 7 full days in a streak; a missed day uses one instead of breaking your streak.</div>
@@ -783,14 +807,14 @@ function openEdit() {
       ${draft.map((x, i) => `<div class="ed" data-i="${i}">
         <input type="text" data-f="name" value="${esc(x.name)}" placeholder="Name">
         <div class="row">
-          <select data-f="kind"><option value="reps"${x.kind === 'reps' ? ' selected' : ''}>Reps</option><option value="time"${x.kind === 'time' ? ' selected' : ''}>Seconds</option></select>
+          <select data-f="kind"><option value="reps"${x.kind === 'reps' ? ' selected' : ''}>Reps</option><option value="time"${x.kind === 'time' ? ' selected' : ''}>Seconds</option><option value="min"${x.kind === 'min' ? ' selected' : ''}>Minutes</option></select>
           <input type="number" inputmode="numeric" min="1" data-f="target" value="${x.target}" aria-label="Target">
           <label class="cb"><input type="checkbox" data-f="sides"${x.sides ? ' checked' : ''}>Each side</label>
         </div>
         <div class="row"><label>Sets<input type="number" inputmode="numeric" min="1" max="10" data-f="sets" value="${x.sets}"></label>
           <label style="flex:3">Note<input type="text" data-f="note" value="${esc(x.note || '')}" placeholder="optional"></label></div>
         <label>How to (one step per line; start a line with "Tip:" for a tip)<textarea data-f="how">${esc(x.how || '')}</textarea></label>
-        <label class="cb"><input type="checkbox" data-f="auto"${x.auto === false ? '' : ' checked'}>Raise the target after 3 days at target (+${x.kind === 'time' ? '5 s' : '1 rep'})</label>
+        <label class="cb"><input type="checkbox" data-f="auto"${x.auto === false ? '' : ' checked'}>Raise the target after 3 days at target (+${x.kind === 'time' ? '5 s' : x.kind === 'min' ? '1 min' : '1 rep'})</label>
         <div class="ctl"><button data-a="up"${i ? '' : ' disabled'}>↑</button><button data-a="down"${i < draft.length - 1 ? '' : ' disabled'}>↓</button><button data-a="del">Remove</button></div>
       </div>`).join('')}
       <button data-a="add" style="width:100%">+ Add exercise</button></div>`;

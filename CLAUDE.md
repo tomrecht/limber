@@ -7,7 +7,7 @@ The owner uses it from their phone. Keep replies short and say plainly what chan
 - `sw.js` – offline cache: page network-first (4 s timeout), the rest cache-first. **Bump `CACHE` (`limber-vN`) on every deploy.**
   It deletes only `limber-*` caches: the origin tomrecht.github.io is shared with Woodshed (`woodshed-*` caches), whose worker does the same.
 - Data: `localStorage` key `limber.v1` (shared origin, so it carried over from the old /woodshed/limber/ address).
-  `ex` = exercises `{id, name, kind: 'reps'|'time', target, sets, sides, note}`;
+  `ex` = exercises `{id, name, kind: 'reps'|'time'|'min', target, sets, sides, note, how, counts?, lvl, auto}`;
   `log[day] = {d: {exId: sets done}, v: {exId: [entry per set]}, n, full}`, entry = `{n}` (reps or seconds) or `{l, r}` for each-side, `rec: 1` = beat
   every earlier day (each-side counts by the weaker side). Days logged before 2026-11-07 have `d` only (plain ticks); keep them working.
 - Logging: tapping an exercise opens a number entry for one set (prefilled from that set last time); chips edit/delete; extra sets allowed.
@@ -15,7 +15,9 @@ The owner uses it from their phone. Keep replies short and say plainly what chan
   passing the best) until "Next side/set →" or "Done" (Done mid-hold counts the time so far; one side only → entry sheet for the other).
   A day is `full` (streaks, goals, calendar) once `S.dayMin` exercises are done (default 4 since 2026-11-08; set in the progress sheet;
   all of them = "clean sweep", +15 XP). Changing `dayMin` re-counts every day (`recountDays`); editing the exercise list only re-counts today. Never lose the owner's data: migrate, don't reset.
-- Exercises: the owner's six (`DEFAULTS`) + ten more (`EXTRA`, added by migration `S.rev` 2). Each has `how` (how-to text, one step a line,
+- Exercises: the owner's six (`DEFAULTS`) + ten more (`EXTRA`, added by migration `S.rev` 2) + Yoga (rev 3): kind `'min'` (minutes; the timer
+  runs in seconds and records whole minutes), `counts: [[10, 2], [15, 3]]` = the day's total minutes make it count as 2 / 3 exercises
+  (`worth`; `doneCount` is weighted and drives full days, records and badges; `exDoneCount` is the raw count for the ring and clean sweep). Each has `how` (how-to text, one step a line,
   "Tip:" lines shown as tips; defaults in `HOW` by lower-case name), shown by tapping the exercise name (`howSheet`), editable in ✎ Edit.
 - Game (2026-11-07), all DERIVED from the log except per-exercise `lvl`/`target`: XP per day (`dayXp`, values in `XP`) + weekly goals
   met (`S.goal`, default 5 full days Mon–Sun) + badges; player level `levelOf` (n→n+1 costs 100+50(n−1)). Rising targets (`checkLevelUp`):
